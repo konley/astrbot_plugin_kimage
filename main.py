@@ -24,8 +24,13 @@ os.makedirs(TMP_DIR, exist_ok=True)
 # ── 工具函数 ────────────────────────────────────
 
 def _download_sync(url: str, path: str) -> bool:
+    """下载图片到本地。支持 HTTP URL 和本地文件路径。"""
     import requests
+    import shutil
     try:
+        if os.path.isfile(url):
+            shutil.copy2(url, path)
+            return True
         r = requests.get(url, timeout=30, headers={"User-Agent": "AstrBot/pic_toolbox"})
         r.raise_for_status()
         with open(path, "wb") as f:
