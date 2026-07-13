@@ -1,7 +1,7 @@
 name: kimage
 display_name: 小K图片处理工具箱
 desc: 小K图片处理工具箱，全能的群聊图片/GIF 处理工具。25+ 指令覆盖基础编辑、对称镜像、视觉特效、GIF动效、趣味表情包。全指令支持 GIF 输入，紧凑参数语法，20+ 可调配置项。
-version: 2.1.0
+version: 2.2.0
 author: konley
 repo: https://github.com/konley/astrbot_plugin_kimage
 support_platforms:
