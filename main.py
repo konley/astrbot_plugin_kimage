@@ -154,7 +154,7 @@ class PicToolboxPlugin(Star):
                 "🔄 GIF\n"
                 "  加速 [倍率] | 调速 <倍率> | 倒放 | 往返\n"
                 "  分解 [张数] | 智能分解 [张数] | 将动图分解为N张图片\n"
-                "  重组 | 打乱动图所有帧重新合成GIF\n"
+                "  重组/打乱 | 打乱动图所有帧重新合成GIF\n"
                 "🎭 表情（@用户使用）\n"
                 "  摸头 | 发射 | 撅 | 抽 | 杀\n"
                 "💡 /帮助 /图帮助 /图help 显示本帮助\n"
@@ -784,15 +784,16 @@ class PicToolboxPlugin(Star):
                 yield r
             return
 
-        # ── 重组（打乱 GIF 帧顺序重新合成）──
-        if cmd_text == "重组":
+        # ── 重组/打乱（打乱 GIF 帧顺序重新合成）──
+        if cmd_text in ("重组", "打乱"):
             if not self._match_mode and not actual_cmd.startswith("/"):
                 return
             image_url = self._resolve_image_url(event, at_qq)
             if not image_url:
                 return
             event.stop_event()
-            async for r in self._download_and_process(event, image_url, shuffle.shuffle_gif, "重组"):
+            label = "重组" if cmd_text == "重组" else "打乱"
+            async for r in self._download_and_process(event, image_url, shuffle.shuffle_gif, label):
                 yield r
             return
 
