@@ -15,7 +15,7 @@ from astrbot.api.star import Context, Star
 from pathlib import Path
 from astrbot.core.utils.astrbot_path import get_astrbot_data_path
 
-from .meme import gif_speed, invert, flip, petpet, mirror, shoot, do, lash, behead, pixelate, reverse, roundtrip, bare_eye_3d, spin, glitch, kaleidoscope, dither, breathing, patina, popart, digital_patina, funhouse_mirror
+from .meme import gif_speed, invert, flip, petpet, mirror, shoot, do, lash, behead, pixelate, reverse, roundtrip, bare_eye_3d, spin, glitch, kaleidoscope, dither, breathing, patina, popart, digital_patina, funhouse_mirror, split
 
 QQ_AVATAR_URL = "http://q1.qlogo.cn/g?b=qq&nk={qq}&s=640"
 TMP_DIR = Path(get_astrbot_data_path()) / "plugin_data" / "pic_toolbox"
@@ -106,6 +106,9 @@ class PicToolboxPlugin(Star):
         # 扭曲参数
         self._fm_type = config.get("funhouse_mirror_type", "bulge")
         self._fm_strength = config.get("funhouse_mirror_strength", 1.0)
+        # 分解参数
+        self._split_default_count = config.get("split_default_count", 3)
+        self._split_max_count = config.get("split_max_count", 15)
         # 启动时清理旧临时文件（进程崩溃残留）
         self._cleanup_stale_tempfiles()
 
@@ -149,6 +152,7 @@ class PicToolboxPlugin(Star):
                 "  扭曲 [类型] [强度] | 波普 [格数] | 马赛克 [程度] | 裸眼3d [强度]\n"
                 "🔄 GIF\n"
                 "  加速 [倍率] | 调速 <倍率> | 倒放 | 往返\n"
+                "  分解 [张数] | 将动图分解为N张图片\n"
                 "🎭 表情（@用户使用）\n"
                 "  摸头 | 发射 | 撅 | 抽 | 杀\n"
                 "💡 /帮助 /图帮助 /图help 显示本帮助\n"
@@ -732,6 +736,29 @@ class PicToolboxPlugin(Star):
                 yield r
             return
 
+        # ── 分解（GIF 按百分比采样为多张 PNG，合并转发）──
+        _fen_m = re.match(r"^分解(\d+)$", cmd_text)
+        if _fen_m or cmd_text == "分解" or (cmd_text.startswith("分解 ") and cmd_text.split(None, 1)[1].isdigit()):
+            if not self._match_mode and not actual_cmd.startswith("/"):
+                return
+            image_url = self._resolve_image_url(event, at_qq)
+            if not image_url:
+                return
+            event.stop_event()
+
+            count = self._split_default_count
+            if _fen_m:
+                count = int(_fen_m.group(1))
+            else:
+                parts = cmd_text.split(None, 1)
+                if len(parts) > 1:
+                    count = int(parts[1])
+            count = max(2, min(count, self._split_max_count))
+
+            async for r in self._split_and_send(event, image_url, count):
+                yield r
+            return
+
         # ── 裸眼3D ─────────────────────────
         _be3d_match = cmd_text in ("裸眼3d", "裸眼3D")
         _be3d_intensity = None
@@ -903,6 +930,90 @@ class PicToolboxPlugin(Star):
                 logger.debug(f"[pic_toolbox] 清理临时文件: {os.path.basename(out)}")
             except OSError:
                 pass
+        asyncio.ensure_future(_cleanup())
+
+    async def _split_and_send(self, event: AstrMessageEvent,
+                              image_url: str, count: int):
+        """下载 GIF → 分解为 N 张 PNG → 合并转发发送。"""
+        uid = uuid.uuid4().hex[:8]
+        input_path = os.path.join(TMP_DIR, f"pt_in_{os.getpid()}_{uid}.tmp")
+        output_dir = os.path.join(TMP_DIR, f"pt_split_{os.getpid()}_{uid}")
+        loop = asyncio.get_event_loop()
+
+        ok = await loop.run_in_executor(None, _download_sync, image_url, input_path)
+        if not ok:
+            try:
+                os.remove(input_path)
+            except OSError:
+                pass
+            yield event.plain_result("图片下载失败，请稍后重试。")
+            return
+
+        if not _is_gif(input_path):
+            try:
+                os.remove(input_path)
+            except OSError:
+                pass
+            yield event.plain_result("分解仅支持动图（GIF）")
+            return
+
+        try:
+            paths = await loop.run_in_executor(
+                None, split.split_gif, input_path, output_dir, count
+            )
+        except ValueError as e:
+            yield event.plain_result(str(e))
+            return
+        except Exception as e:
+            logger.error(f"[pic_toolbox] 分解失败: {e}")
+            yield event.plain_result(f"分解失败: {e}")
+            return
+        finally:
+            try:
+                os.remove(input_path)
+            except OSError:
+                pass
+
+        if not paths:
+            yield event.plain_result("分解失败：未生成任何图片")
+            return
+
+        actual_count = len(paths)
+        self_id = event.get_self_id()
+        self_uin = int(self_id) if str(self_id).isdigit() else 0
+
+        # 构造合并转发节点
+        node_list = []
+        for i, p in enumerate(paths):
+            node_list.append(Comp.Node(
+                uin=self_uin,
+                name=f"分解结果 {i + 1}/{actual_count}",
+                content=[Comp.Image(file=str(p))],
+            ))
+
+        try:
+            nodes = Comp.Nodes(node_list)
+            yield event.chain_result([nodes])
+        except Exception as e:
+            logger.warning(f"[pic_toolbox] 合并转发构造失败，降级逐张发送: {e}")
+            for i, p in enumerate(paths):
+                yield event.chain_result([Comp.Image(file=str(p))])
+
+        # 延迟 10s 后清理输出文件
+        _paths = paths
+        _dir = output_dir
+        async def _cleanup():
+            await asyncio.sleep(10)
+            for p in _paths:
+                try:
+                    os.remove(p)
+                except OSError:
+                    pass
+            try:
+                os.rmdir(_dir)
+            except OSError:
+                pass
+            logger.debug(f"[pic_toolbox] 清理分解临时文件: {len(_paths)} 张")
         asyncio.ensure_future(_cleanup())
 
     async def _dual_avatar(self, event: AstrMessageEvent, at_qq: str, processor):

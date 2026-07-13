@@ -247,5 +247,17 @@
     "type": "int",
     "default": 48,
     "hint": "GIF帧数过多时均匀采样降低处理负担，过低影响流畅度"
+  },
+  "split_default_count": {
+    "description": "分解 - 默认张数",
+    "type": "int",
+    "default": 3,
+    "hint": "「分解」指令不带参数时的默认分解张数（2~15）"
+  },
+  "split_max_count": {
+    "description": "分解 - 最大张数",
+    "type": "int",
+    "default": 15,
+    "hint": "「分解 N」指令允许的最大分解张数上限（2~50）"
   }
 }
