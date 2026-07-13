@@ -1,9 +1,9 @@
 # 🖼️ 小K图片处理工具箱 (astrbot_plugin_kimage)
 
-基于 AstrBot 框架的群聊图片 / 头像处理插件。支持静态图和 GIF 的**反色、翻转、对称、旋转、故障、万花筒、抖动、呼吸、包浆、波普、电子包浆、扭曲、裸眼3D、马赛克、调速、倒放、往返、分解**以及**摸头杀、发射、撅人、抽、砍头**等一系列趣味表情包生成。所有 GIF 处理统一使用增量帧展开管道，保留原图时长、透明度与循环信息
+基于 AstrBot 框架的群聊图片 / 头像处理插件。支持静态图和 GIF 的**反色、翻转、对称、旋转、故障、万花筒、抖动、呼吸、包浆、波普、电子包浆、扭曲、裸眼3D、马赛克、调速、倒放、往返、分解、智能分解、重组**以及**摸头杀、发射、撅人、抽、砍头**等一系列趣味表情包生成。所有 GIF 处理统一使用增量帧展开管道，保留原图时长、透明度与循环信息
 
 <p align="center">
-  <img src="https://img.shields.io/badge/version-2.2.0-blue" alt="Version">
+  <img src="https://img.shields.io/badge/version-2.3.0-blue" alt="Version">
   <img src="https://img.shields.io/badge/Python-3.8%2B-blue" alt="Python">
   <img src="https://img.shields.io/badge/AstrBot-%E6%8F%92%E4%BB%B6%E6%A1%86%E6%9E%B6-brightgreen" alt="AstrBot">
   <img src="https://img.shields.io/badge/license-MIT-green" alt="License">
@@ -70,6 +70,8 @@
 | `倒放` | 反转 GIF 帧顺序 | 引用 / 直接 / `@用户` |
 | `往返` | GIF 正序+倒序 ping-pong 循环 | 同上 |
 | `分解 [张数]` | 将 GIF 按百分比均匀采样分解为 N 张图片，合并转发发送（默认3，最大15） | 同上 |
+| `智能分解 [张数]` | 基于帧间差异+动态规划选取差异最大的关键帧，合并转发发送（默认3，最大10） | 同上 |
+| `重组` | 打乱 GIF 所有帧顺序重新合成 GIF 发送 | 同上 |
 
 ### 通用特性
 
@@ -102,6 +104,7 @@
 | `funhouse_mirror_type` / `funhouse_mirror_strength` | str/float | `bulge` / `1.0` | 扭曲类型与强度 |
 | `be3d_line_spacing` / `be3d_line_width` / `be3d_line_alpha` / `be3d_line_direction` / `be3d_mask_threshold` / `be3d_mask_blur` / `be3d_foreground_blur` / `be3d_max_frames` | int/int/int/str/int/int/int/int | `40` / `4` / `200` / `both` / `15` / `7` / `0` / `48` | 裸眼3D 参数 |
 | `split_default_count` / `split_max_count` | int/int | `3` / `15` | 分解默认张数 / 最大张数 |
+| `split_smart_max_count` | int | `10` | 智能分解最大张数上限 |
 
 ---
 
@@ -156,6 +159,14 @@ Bot：  [取发送者 + 被 @ 者头像 → 生成撅人 GIF]
 用户：（引用一张 GIF）
 用户：分解 5
 Bot：  [合并转发：5 张按百分比采样的关键帧图片]
+
+用户：（引用一张 GIF）
+用户：智能分解 5
+Bot：  [合并转发：5 张按帧间差异+DP选取的关键帧图片]
+
+用户：（引用一张 GIF）
+用户：重组
+Bot：  [帧顺序随机打乱后重新合成的 GIF]
 ```
 
 ---
@@ -166,7 +177,7 @@ Bot：  [合并转发：5 张按百分比采样的关键帧图片]
 astrbot_plugin_kimage/
 ├── main.py              # 插件主体：指令路由与事件处理
 ├── metadata.yaml        # 插件元数据
-├── _conf_schema.json    # 配置 Schema（24+ 配置项）
+├── _conf_schema.json    # 配置 Schema（25+ 配置项）
 ├── requirements.txt     # Python 依赖
 ├── logo.png             # 插件图标
 ├── meme/                # 图像处理模块
@@ -188,7 +199,8 @@ astrbot_plugin_kimage/
 │   ├── pixelate.py      # 马赛克
 │   ├── reverse.py       # GIF 倒放
 │   ├── roundtrip.py     # GIF 往返
-│   ├── split.py         # GIF 分解（按百分比采样为多张 PNG）
+│   ├── split.py         # GIF 分解（百分比采样 + 智能关键帧采样）
+│   ├── shuffle.py       # GIF 重组（打乱帧顺序）
 │   ├── petpet.py        # 摸头杀
 │   ├── shoot.py         # 射击（含人脸检测）
 │   ├── do.py            # 撅人（双人头）
