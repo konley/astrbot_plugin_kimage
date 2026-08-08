@@ -1,9 +1,9 @@
 # 🖼️ 小K图片处理工具箱 (astrbot_plugin_kimage)
 
-基于 AstrBot 框架的群聊图片 / 头像处理插件。支持静态图和 GIF 的**反色、翻转、对称、旋转、故障、万花筒、抖动、呼吸、包浆、波普、电子包浆、扭曲、裸眼3D、马赛克、调速、倒放、往返、分解、智能分解、重组**以及**摸头杀、发射、撅人、抽、砍头**等一系列趣味表情包生成。所有 GIF 处理统一使用增量帧展开管道，保留原图时长、透明度与循环信息
+基于 AstrBot 框架的群聊图片 / 头像处理插件。支持静态图和 GIF 的**抠图（本地 rembg）、反色、翻转、对称、旋转、故障、万花筒、抖动、呼吸、包浆、波普、电子包浆、扭曲、裸眼3D、马赛克、调速、倒放、往返、分解、智能分解、重组**以及**摸头杀、发射、撅人、抽、砍头**等一系列趣味表情包生成。所有 GIF 处理统一使用增量帧展开管道，保留原图时长、透明度与循环信息
 
 <p align="center">
-  <img src="https://img.shields.io/badge/version-2.3.0-blue" alt="Version">
+  <img src="https://img.shields.io/badge/version-2.4.0-blue" alt="Version">
   <img src="https://img.shields.io/badge/Python-3.8%2B-blue" alt="Python">
   <img src="https://img.shields.io/badge/AstrBot-%E6%8F%92%E4%BB%B6%E6%A1%86%E6%9E%B6-brightgreen" alt="AstrBot">
   <img src="https://img.shields.io/badge/license-MIT-green" alt="License">
@@ -18,9 +18,12 @@
 | 指令 | 说明 | 图片来源 |
 | :--- | :--- | :--- |
 | `反色` | 对图片 / GIF 执行反色处理 | 引用回复 / 直接发送 / `@用户` |
+| `抠图` / `去背景` / `去背` / `cutout` | 本地 AI 去背景，输出透明 GIF（静图亦转 GIF） | 同上 |
 | `旋转 [角度步长]` | 圆形旋转 GIF，默认 6°/帧 | 同上 |
 | `左右翻转` | 水平镜像翻转 | 同上 |
 | `上下翻转` | 垂直颠倒翻转 | 同上 |
+
+> **抠图说明**：依赖 `rembg` + `onnxruntime`（CPU）。默认模型 `u2netp`，最长边 512，动图最多 24 帧。QQ 聊天对 PNG alpha 常不稳定，故统一发透明 GIF。首次运行会下载模型，可能较慢；同时仅处理一个抠图任务。
 
 ### 🪞 对称
 
@@ -90,6 +93,11 @@
 | :--- | :--- | :--- | :--- |
 | `enable_at_avatar` | bool | `true` | 允许 `@用户 + 指令` 获取对方头像处理 |
 | `match_mode` | bool | `true` | 开启后直接发文字即可触发，无需 `/` 前缀 |
+| `cutout_model` | str | `u2netp` | 抠图模型：`u2netp`/`silueta`/`u2net`/`u2net_human_seg`/`isnet-general-use`/`isnet-anime` |
+| `cutout_max_side` | int | `512` | 抠图前最长边缩放（64~2048） |
+| `cutout_gif_max_frames` | int | `24` | 动图抠图最大帧数 |
+| `cutout_timeout_sec` | int | `120` | 单次抠图超时秒数 |
+| `cutout_alpha_matting` | bool | `false` | 精细边缘（更慢） |
 | `gif_speed_allow_frame_drop` | bool | `true` | 调速超 50 FPS 时允许均匀丢帧 |
 | `default_speedup_factor` | float | `2.5` | 「加速」默认倍率 |
 | `default_pixelate_block` | int | `8` | 「马赛克」默认块大小 |
@@ -133,9 +141,11 @@
 ```bash
 pip install Pillow>=10.0.0 requests>=2.25.0
 pip install opencv-python-headless  # 发射指令需要
+pip install rembg onnxruntime      # 抠图指令需要
 ```
 
-> `opencv-python-headless` 仅 `发射`（人脸检测）需要，同时也会安装 numpy。
+> `opencv-python-headless` 仅 `发射`（人脸检测）需要，同时也会安装 numpy。  
+> `rembg` / `onnxruntime` 仅 `抠图` 需要；模型缓存默认在 `data/plugin_data/kimage/u2net/`。
 
 ---
 

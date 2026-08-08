@@ -265,5 +265,35 @@
     "type": "int",
     "default": 10,
     "hint": "「智能分解 N」指令允许的最大张数上限（2~30），因算法复杂度较高建议不超过15"
+  },
+  "cutout_model": {
+    "description": "抠图模型",
+    "type": "string",
+    "default": "u2netp",
+    "hint": "本地 rembg 模型：u2netp(轻量推荐) / silueta / u2net / u2net_human_seg / isnet-general-use / isnet-anime。越大越准越慢"
+  },
+  "cutout_max_side": {
+    "description": "抠图最长边（像素）",
+    "type": "int",
+    "default": 512,
+    "hint": "送入模型前缩放，64~2048。越大越清晰越慢，8G 主机建议 ≤512"
+  },
+  "cutout_gif_max_frames": {
+    "description": "动图抠图最大帧数",
+    "type": "int",
+    "default": 24,
+    "hint": "GIF 均匀抽帧上限 1~48，超出则采样。CPU 上帧数线性耗时"
+  },
+  "cutout_timeout_sec": {
+    "description": "抠图超时（秒）",
+    "type": "int",
+    "default": 120,
+    "hint": "单次任务超时，超时返回提示。动图可酌情加大"
+  },
+  "cutout_alpha_matting": {
+    "description": "抠图精细边缘（alpha matting）",
+    "type": "bool",
+    "default": false,
+    "hint": "开启后发丝等边缘更好，但明显更慢，默认关闭"
   }
 }

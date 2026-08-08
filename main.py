@@ -9,13 +9,13 @@ from PIL import Image
 
 import astrbot.api.message_components as Comp
 from astrbot.api import logger
-from astrbot.api.event import filter, AstrMessageEvent
+from astrbot.api.event import filter, AstrMessageEvent, MessageChain
 from astrbot.api.event.filter import EventMessageType
 from astrbot.api.star import Context, Star
 from pathlib import Path
 from astrbot.core.utils.astrbot_path import get_astrbot_data_path
 
-from .meme import gif_speed, invert, flip, petpet, mirror, shoot, do, lash, behead, pixelate, reverse, roundtrip, bare_eye_3d, spin, glitch, kaleidoscope, dither, breathing, patina, popart, digital_patina, funhouse_mirror, split, shuffle
+from .meme import gif_speed, invert, flip, petpet, mirror, shoot, do, lash, behead, pixelate, reverse, roundtrip, bare_eye_3d, spin, glitch, kaleidoscope, dither, breathing, patina, popart, digital_patina, funhouse_mirror, split, shuffle, cutout
 
 QQ_AVATAR_URL = "http://q1.qlogo.cn/g?b=qq&nk={qq}&s=640"
 TMP_DIR = Path(get_astrbot_data_path()) / "plugin_data" / "pic_toolbox"
@@ -110,6 +110,13 @@ class PicToolboxPlugin(Star):
         self._split_default_count = config.get("split_default_count", 3)
         self._split_max_count = config.get("split_max_count", 15)
         self._split_smart_max_count = config.get("split_smart_max_count", 10)
+        # 抠图参数
+        self._cutout_model = config.get("cutout_model", "u2netp")
+        self._cutout_max_side = config.get("cutout_max_side", 512)
+        self._cutout_gif_max_frames = config.get("cutout_gif_max_frames", 24)
+        self._cutout_timeout_sec = config.get("cutout_timeout_sec", 120)
+        self._cutout_alpha_matting = config.get("cutout_alpha_matting", False)
+        self._cutout_busy = False
         # 启动时清理旧临时文件（进程崩溃残留）
         self._cleanup_stale_tempfiles()
 
@@ -141,7 +148,7 @@ class PicToolboxPlugin(Star):
                 "━━━ 小K图片处理工具箱 ━━━\n"
                 "发送或引用一张图片，附带以下指令：\n"
                 "🎨 基础\n"
-                "  反色 | 旋转 [角度步长] | 左右翻转 | 上下翻转\n"
+                "  反色 | 抠图/去背景 [边长] | 旋转 [角度步长] | 左右翻转 | 上下翻转\n"
                 "🪞 对称\n"
                 "  对称[1-6/左/右/上/下/左上/右上]（1=左 2=上 3=\\ 4=/ 5=右 6=下，默认左）\n"
                 "  左对称 | 右对称 | 上对称 | 下对称 | 左上对称 | 右上对称\n"
@@ -415,6 +422,40 @@ class PicToolboxPlugin(Star):
                 return
             event.stop_event()
             async for r in self._download_and_process(event, image_url, invert.invert_image, "反色"):
+                yield r
+            return
+
+        # ── 抠图 / 去背景（本地 rembg，输出透明 GIF）──
+        _co_m = re.match(r"^(?:抠图|去背景|去背|cutout)(\d+)$", cmd_text, re.I)
+        _co_aliases = {"抠图", "去背景", "去背", "cutout"}
+        _co_prefix = (
+            cmd_text.startswith("抠图 ")
+            or cmd_text.startswith("去背景 ")
+            or cmd_text.startswith("去背 ")
+            or cmd_text.lower().startswith("cutout ")
+        )
+        if _co_m or cmd_text in _co_aliases or cmd_text.lower() in _co_aliases or _co_prefix:
+            if not self._match_mode and not actual_cmd.startswith("/"):
+                return
+            image_url = self._resolve_image_url(event, at_qq)
+            if not image_url:
+                return
+            if self._cutout_busy:
+                yield event.plain_result("抠图忙碌中，请稍后再试")
+                return
+            max_side = self._cutout_max_side
+            if _co_m:
+                max_side = max(64, min(2048, int(_co_m.group(1))))
+            elif _co_prefix:
+                parts = cmd_text.split(None, 1)
+                if len(parts) > 1:
+                    try:
+                        max_side = max(64, min(2048, int(parts[1].strip())))
+                    except ValueError:
+                        yield event.plain_result("边长请用数字，如「抠图 512」")
+                        return
+            event.stop_event()
+            async for r in self._run_cutout(event, image_url, max_side):
                 yield r
             return
 
@@ -912,6 +953,99 @@ class PicToolboxPlugin(Star):
         if at_qq and self._enable_at_avatar:
             return QQ_AVATAR_URL.format(qq=at_qq)
         return None
+
+    async def _run_cutout(self, event: AstrMessageEvent, image_url: str, max_side: int):
+        """下载图片 → 本地 rembg 抠图 → 发送透明 GIF。
+
+        注意：进度提示必须用 event.send 直发，不能中间 yield。
+        管道洋葱模型在 yield 后会跑 decorate/respond；其它插件 stop_event
+        会截断生成器，导致后续抠图逻辑永不执行。
+        """
+        self._cutout_busy = True
+        uid = uuid.uuid4().hex[:8]
+        input_path = os.path.join(TMP_DIR, f"pt_in_{os.getpid()}_{uid}.tmp")
+        output_path = os.path.join(TMP_DIR, f"pt_cutout_{os.getpid()}_{uid}.gif")
+        loop = asyncio.get_event_loop()
+        try:
+            try:
+                await event.send(MessageChain([Comp.Plain("抠图中，请稍候…")]))
+            except Exception as e:
+                logger.warning("[kimage] 抠图进度提示发送失败: %s", e)
+
+            logger.info(
+                "[kimage] 抠图开始: url=%s max_side=%s model=%s",
+                (image_url or "")[:120],
+                max_side,
+                self._cutout_model,
+            )
+            ok = await loop.run_in_executor(None, _download_sync, image_url, input_path)
+            if not ok:
+                yield event.plain_result("图片下载失败，请稍后重试。")
+                return
+            logger.info(
+                "[kimage] 抠图下载完成: path=%s size=%s",
+                input_path,
+                os.path.getsize(input_path) if os.path.isfile(input_path) else 0,
+            )
+
+            def _proc():
+                return cutout.cutout_image(
+                    input_path,
+                    output_path,
+                    model=self._cutout_model,
+                    max_side=max_side,
+                    gif_max_frames=self._cutout_gif_max_frames,
+                    alpha_matting=bool(self._cutout_alpha_matting),
+                )
+
+            timeout = max(30, min(600, int(self._cutout_timeout_sec or 120)))
+            try:
+                note = await asyncio.wait_for(
+                    loop.run_in_executor(None, _proc),
+                    timeout=timeout,
+                )
+            except asyncio.TimeoutError:
+                logger.error("[kimage] 抠图超时: timeout=%ss", timeout)
+                yield event.plain_result(f"抠图超时（>{timeout}s），可缩小边长或减少动图帧数")
+                return
+            except cutout.CutoutDependencyError as e:
+                yield event.plain_result(str(e))
+                return
+            except Exception as e:
+                logger.exception("[kimage] 抠图失败: %s", e)
+                yield event.plain_result(f"抠图失败: {e}")
+                return
+
+            if not os.path.isfile(output_path):
+                yield event.plain_result("抠图失败：未生成输出文件")
+                return
+
+            logger.info(
+                "[kimage] 抠图完成: out=%s size=%s note=%s",
+                output_path,
+                os.path.getsize(output_path),
+                note or "",
+            )
+            chain = []
+            if note:
+                chain.append(Comp.Plain(note + "\n"))
+            chain.append(Comp.Image(file=str(output_path)))
+            yield event.chain_result(chain)
+
+            out = output_path
+            async def _cleanup():
+                await asyncio.sleep(10)
+                try:
+                    os.remove(out)
+                except OSError:
+                    pass
+            asyncio.ensure_future(_cleanup())
+        finally:
+            self._cutout_busy = False
+            try:
+                os.remove(input_path)
+            except OSError:
+                pass
 
     async def _download_and_process(self, event: AstrMessageEvent,
                                      image_url: str, processor, label: str,

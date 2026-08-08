@@ -1,5 +1,20 @@
 # CHANGELOG
 
+## [v2.4.0] — 2026-08-08
+
+### ✨ 新功能
+
+- **抠图 / 去背景 / 去背 / cutout**：本地 rembg + onnxruntime 去背景
+- 输出 **透明 GIF**（静图也转单帧 GIF，QQ 更易保留透明）
+- 动图支持：均匀抽帧（默认 ≤24 帧）+ 最长边缩放（默认 512）+ 全局串行
+- 紧凑语法：`抠图512` / `抠图 512` 可覆盖边长
+- 配置项：`cutout_model` / `cutout_max_side` / `cutout_gif_max_frames` / `cutout_timeout_sec` / `cutout_alpha_matting`
+- 依赖：`rembg`、`onnxruntime`（需装入 AstrBot 运行环境）
+
+### 🐛 修复
+
+- **抠图无后续**：进度提示改为 `event.send` 直发，避免管道 yield 后被其它插件 `stop_event` 截断（只出「抠图中」不出图）
+
 ## [v2.3.1] — 2026-08-08
 
 ### 🐛 修复
