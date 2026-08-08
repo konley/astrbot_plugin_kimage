@@ -36,21 +36,36 @@ def _mirror_static(img: Image.Image, keep: str) -> Image.Image:
 
 
 def _mirror_diagonal_static(img: Image.Image, keep: str) -> Image.Image:
-    """斜边对称单帧（\ 或 / 对角线）"""
+    """斜边对称单帧（\\ 或 / 对角线），支持任意宽高比。
+
+    在归一化坐标 [0,1]^2 上做对角线反射，再映射回像素，
+    避免旧实现直接交换 x/y（仅对正方形合法）导致长方形越界。
+    """
     arr = np.array(img)
     h, w = arr.shape[:2]
-    result = arr.copy()
-    y_idx, x_idx = np.mgrid[0:h, 0:w]
+    if h <= 1 or w <= 1:
+        return img.copy() if hasattr(img, "copy") else Image.fromarray(arr.copy())
+
+    y_idx, x_idx = np.mgrid[0:h, 0:w].astype(np.float64)
+    # 归一化到单位正方形，使矩形真实对角线对应 u=v 或 u+v=1
+    u = x_idx / (w - 1)
+    v = y_idx / (h - 1)
 
     if keep == "diag_tl":
-        # \ 对角线：保持左上三角形，镜像到右下
-        mask = y_idx >= x_idx
-        result[mask] = arr[x_idx[mask], y_idx[mask]]
+        # \ 对角线：单位坐标反射 (u,v)->(v,u)；覆盖 v>=u 一侧（与旧正方形行为一致）
+        mask = v >= u
+        src_u, src_v = v, u
     else:  # diag_tr
-        # / 对角线：保持右上三角形，镜像到左下
-        mask = y_idx + x_idx >= h - 1
-        result[mask] = arr[h - 1 - x_idx[mask], w - 1 - y_idx[mask]]
+        # / 对角线：单位坐标反射 (u,v)->(1-v, 1-u)
+        mask = (u + v) >= 1.0
+        src_u = 1.0 - v
+        src_v = 1.0 - u
 
+    src_x = np.clip(np.rint(src_u * (w - 1)), 0, w - 1).astype(np.intp)
+    src_y = np.clip(np.rint(src_v * (h - 1)), 0, h - 1).astype(np.intp)
+
+    result = arr.copy()
+    result[mask] = arr[src_y[mask], src_x[mask]]
     return Image.fromarray(result)
 
 

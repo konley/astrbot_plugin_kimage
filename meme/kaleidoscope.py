@@ -2,7 +2,7 @@
 
 import math
 from PIL import Image, ImageDraw
-from .gif_utils import is_gif, save_rgba_gif
+from .gif_utils import is_gif, unfold_frames, save_rgba_gif
 
 
 def _circular_mask(size):

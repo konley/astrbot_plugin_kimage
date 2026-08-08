@@ -1,5 +1,13 @@
 # CHANGELOG
 
+## [v2.3.1] — 2026-08-08
+
+### 🐛 修复
+
+- **左上/右上对称**：非正方形图 IndexError（`index N out of bounds for axis 1 with size N`）；改为归一化坐标对角线反射，长方形可用
+- **呼吸 / 万花筒**：补全 `unfold_frames` 导入，修复 GIF 输入 NameError
+- **裸眼3D**：`line_spacing ≤ 0` 时死循环
+
 ## [v2.1.0] — 2026-06-27
 
 ### ✨ 新功能

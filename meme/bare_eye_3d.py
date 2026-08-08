@@ -20,16 +20,18 @@ def _draw_dividing_lines(img, spacing=80, line_width=3, line_alpha=200, directio
     w, h = img.size
     color = (255, 255, 255, line_alpha)
 
+    step_y = spacing if spacing > 0 else max(1, h // 4)
+    step_x = spacing if spacing > 0 else max(1, w // 4)
     if direction in ("horizontal", "both"):
-        y = spacing if spacing > 0 else h // 4
+        y = step_y
         while y < h:
             draw.line([(0, y), (w, y)], fill=color, width=line_width)
-            y += spacing
+            y += step_y
     if direction in ("vertical", "both"):
-        x = spacing if spacing > 0 else w // 4
+        x = step_x
         while x < w:
             draw.line([(x, 0), (x, h)], fill=color, width=line_width)
-            x += spacing
+            x += step_x
     return Image.alpha_composite(img, overlay)
 
 
